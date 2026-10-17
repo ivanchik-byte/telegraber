@@ -211,15 +211,27 @@ async def register_handlers(bot: TelegramClient) -> None:
             buttons=get_settings_keyboard(),
         )
 
-    @bot.on(events.NewMessage(pattern="/login"))
-    async def cmd_login(event: events.NewMessage.Event):
-        if not is_owner(event.sender_id):
+    async def start_login_flow(event: events.NewMessage.Event):
+        if not settings.TELEGRAM_API_ID:
+            user_states[event.sender_id] = {"action": "await_api_id"}
+            await event.reply(
+                "🔑 **Настройка Telegram API**\n\n"
+                "Введите ваш **API_ID** с https://my.telegram.org\n"
+                "(или отправьте `skip`, чтобы использовать официальный Desktop-ключ):"
+            )
             return
+
         user_states[event.sender_id] = {"action": "await_phone"}
         await event.reply(
             "📱 **Вход по номеру телефона**\n\n"
             "Введите номер телефона аккаунта в международном формате (например, `+79991234567`):"
         )
+
+    @bot.on(events.NewMessage(pattern="/login"))
+    async def cmd_login(event: events.NewMessage.Event):
+        if not is_owner(event.sender_id):
+            return
+        await start_login_flow(event)
 
     @bot.on(events.CallbackQuery)
     async def handle_callback(event: events.CallbackQuery.Event):
@@ -262,8 +274,7 @@ async def register_handlers(bot: TelegramClient) -> None:
             else:
                 await event.respond(f"❌ Ошибка импорта: {msg}")
         elif data == "start_phone_login":
-            user_states[event.sender_id] = {"action": "await_phone"}
-            await event.respond("📱 Введите номер телефона аккаунта (например, `+79991234567`):")
+            await start_login_flow(event)
             await event.answer()
         elif data == "confirm_reset":
             delete_session()
@@ -308,13 +319,37 @@ async def register_handlers(bot: TelegramClient) -> None:
                 await event.reply("❌ ID должен быть целым числом (например, `-1001234567890`).")
             return
 
+        if action == "await_api_id":
+            if text.lower() == "skip":
+                settings.TELEGRAM_API_ID = 2040
+                settings.TELEGRAM_API_HASH = "b18441a1b366a10c4822d4f3521e4b24"
+                settings.save_runtime_overrides()
+                user_states[event.sender_id] = {"action": "await_phone"}
+                await event.reply("📱 Введите номер телефона аккаунта (например, `+79991234567`):")
+                return
+            try:
+                settings.TELEGRAM_API_ID = int(text)
+                user_states[event.sender_id] = {"action": "await_api_hash"}
+                await event.reply("🔑 Теперь введите ваш **API_HASH** с https://my.telegram.org:")
+            except ValueError:
+                await event.reply("❌ API_ID должен быть целым числом. Попробуйте еще раз или отправьте `skip`:")
+            return
+
+        if action == "await_api_hash":
+            settings.TELEGRAM_API_HASH = text.strip()
+            settings.save_runtime_overrides()
+            user_states[event.sender_id] = {"action": "await_phone"}
+            await event.reply("📱 Введите номер телефона аккаунта (например, `+79991234567`):")
+            return
+
         if action == "await_phone":
             phone = text.replace(" ", "").replace("-", "")
             profile = get_default_device_profile()
+            api_id, api_hash = settings.get_api_credentials()
             temp_client = TelegramClient(
                 StringSession(),
-                settings.TELEGRAM_API_ID,
-                settings.TELEGRAM_API_HASH,
+                api_id,
+                api_hash,
                 device_model=profile["device_model"],
                 system_version=profile["system_version"],
                 app_version=profile["app_version"],
@@ -366,7 +401,6 @@ async def register_handlers(bot: TelegramClient) -> None:
                 await event.reply(f"❌ Ошибка входа: {e}")
             return
 
-        # 5. State: Phone login step 3 (2FA password)
         if action == "await_login_2fa":
             client: TelegramClient = state.get("client")
             try:
@@ -386,17 +420,17 @@ async def register_handlers(bot: TelegramClient) -> None:
                 await event.reply(f"❌ Ошибка входа: {e}")
             return
 
-        # 6. Telegram link handler
         if "t.me/" in text:
             await handle_post_download(event, text)
 
 
 async def init_bot() -> TelegramClient:
     global bot_client
+    api_id, api_hash = settings.get_api_credentials()
     bot_client = TelegramClient(
         str(settings.SESSIONS_DIR / "bot_controller.session"),
-        api_id=settings.TELEGRAM_API_ID,
-        api_hash=settings.TELEGRAM_API_HASH,
+        api_id=api_id,
+        api_hash=api_hash,
     )
     await bot_client.start(bot_token=settings.BOT_TOKEN)
     await register_handlers(bot_client)

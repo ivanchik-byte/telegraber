@@ -39,14 +39,15 @@ class UserbotService:
 
     async def start(self) -> bool:
         session_str = get_saved_session_string()
-        if not session_str or not settings.TELEGRAM_API_ID or not settings.TELEGRAM_API_HASH:
+        if not session_str:
             return False
 
+        api_id, api_hash = settings.get_api_credentials()
         profile = DEVICE_PROFILES[0]
         self.client = TelegramClient(
             StringSession(session_str),
-            api_id=settings.TELEGRAM_API_ID,
-            api_hash=settings.TELEGRAM_API_HASH,
+            api_id=api_id,
+            api_hash=api_hash,
             device_model=profile["device_model"],
             system_version=profile["system_version"],
             app_version=profile["app_version"],

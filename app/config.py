@@ -39,14 +39,20 @@ class Settings(BaseSettings):
 
     BOT_TOKEN: str = ""
     OWNER_ID: int = 0
-    TELEGRAM_API_ID: int = 2040
-    TELEGRAM_API_HASH: str = "b18441a1b366a10c4822d4f3521e4b24"
+    TELEGRAM_API_ID: Optional[int] = None
+    TELEGRAM_API_HASH: Optional[str] = None
     FALLBACK_DESTINATION: FallbackDestination = "direct"
     TARGET_CHAT_ID: Optional[int] = None
 
     DOWNLOAD_DIR: Path = Path("/app/downloads")
     SESSIONS_DIR: Path = Path("/app/sessions")
     TDATA_DIR: Path = Path("/app/tdata_input")
+
+    def get_api_credentials(self) -> tuple[int, str]:
+        return (
+            self.TELEGRAM_API_ID or 2040,
+            self.TELEGRAM_API_HASH or "b18441a1b366a10c4822d4f3521e4b24",
+        )
 
     @field_validator("BOT_TOKEN", mode="before")
     @classmethod
@@ -62,16 +68,16 @@ class Settings(BaseSettings):
 
     @field_validator("TELEGRAM_API_ID", mode="before")
     @classmethod
-    def clean_api_id(cls, v: Any) -> int:
+    def clean_api_id(cls, v: Any) -> Optional[int]:
         if not v or (isinstance(v, str) and not v.strip()):
-            return 2040
+            return None
         return int(v)
 
     @field_validator("TELEGRAM_API_HASH", mode="before")
     @classmethod
-    def clean_api_hash(cls, v: Any) -> str:
+    def clean_api_hash(cls, v: Any) -> Optional[str]:
         if not v or (isinstance(v, str) and not v.strip()):
-            return "b18441a1b366a10c4822d4f3521e4b24"
+            return None
         return str(v).strip()
 
     @field_validator("TARGET_CHAT_ID", mode="before")
