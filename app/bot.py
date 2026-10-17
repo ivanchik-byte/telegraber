@@ -251,34 +251,49 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
         total_size = sum(item.size for item in media_list)
         total_size_mb = total_size / (1024 * 1024)
         has_heavy_file = any(item.size > 50 * 1024 * 1024 for item in media_list)
+        is_large_batch = total_size > 50 * 1024 * 1024 or count > 10
         count = len(media_list)
 
         sent_via_bot = False
         if not has_heavy_file and settings.FALLBACK_DESTINATION != "channel":
-            await status_msg.edit(
-                f"Отправка альбома в диалог бота ({count} файл(ов), {total_size_mb:.1f} МБ)..."
-            )
             try:
-                for i in range(0, count, 10):
-                    chunk = media_list[i : i + 10]
-                    chunk_files = [str(x.path) for x in chunk]
-                    chunk_captions = [x.caption or "" for x in chunk]
-                    if len(chunk_files) == 1:
+                if is_large_batch:
+                    for idx, item in enumerate(media_list, start=1):
+                        item_mb = item.size / (1024 * 1024)
+                        await status_msg.edit(
+                            f"Отправка в диалог бота ({idx}/{count}): {item.path.name} ({item_mb:.1f} МБ)..."
+                        )
                         await bot_client.send_file(
                             settings.OWNER_ID,
-                            file=chunk_files[0],
-                            caption=chunk_captions[0] or None,
+                            file=str(item.path),
+                            caption=item.caption or None,
+                        )
+                    sent_via_bot = True
+                    await status_msg.edit(
+                        f"Доставлено в диалог бота: {count} файл(ов) ({total_size_mb:.1f} МБ).\n\n"
+                        f"Предупреждение: файлы были отправлены по отдельности, "
+                        f"так как общий объем публикации превысил 50 МБ ({count} шт., {total_size_mb:.1f} МБ)."
+                    )
+                else:
+                    await status_msg.edit(
+                        f"Отправка альбома в диалог бота ({count} файл(ов), {total_size_mb:.1f} МБ)..."
+                    )
+                    if count == 1:
+                        await bot_client.send_file(
+                            settings.OWNER_ID,
+                            file=str(media_list[0].path),
+                            caption=media_list[0].caption or None,
                         )
                     else:
                         await bot_client.send_file(
                             settings.OWNER_ID,
-                            file=chunk_files,
-                            caption=chunk_captions,
+                            file=[str(item.path) for item in media_list],
+                            caption=[item.caption or "" for item in media_list],
                         )
-                sent_via_bot = True
-                await status_msg.edit(
-                    f"Доставлено в диалог бота: {count} файл(ов) ({total_size_mb:.1f} МБ)."
-                )
+                    sent_via_bot = True
+                    await status_msg.edit(
+                        f"Доставлено в диалог бота: {count} файл(ов) ({total_size_mb:.1f} МБ)."
+                    )
             except Exception as exc:
                 sent_via_bot = False
                 await status_msg.edit(
@@ -298,10 +313,19 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
                 f"Отправка через юзербота в {dest_title} ({count} файл(ов), {total_size_mb:.1f} МБ)..."
             )
             await userbot_service.send_media_files(
-                target_peer, media_list, progress_callback=progress_callback
+                target_peer,
+                media_list,
+                progress_callback=progress_callback,
+                as_album=not is_large_batch,
             )
+            warning_text = ""
+            if is_large_batch:
+                warning_text = (
+                    f"\n\nПредупреждение: файлы были отправлены по отдельности, "
+                    f"так как общий объем публикации превысил 50 МБ ({count} шт., {total_size_mb:.1f} МБ)."
+                )
             await status_msg.edit(
-                f"Все файлы публикации ({count} шт., {total_size_mb:.1f} МБ) доставлены в {dest_title}."
+                f"Все файлы публикации ({count} шт., {total_size_mb:.1f} МБ) доставлены в {dest_title}.{warning_text}"
             )
 
     except PermissionError as e:

@@ -173,23 +173,29 @@ class UserbotService:
         target_peer: Any,
         media_list: List[DownloadedMedia],
         progress_callback: Optional[Callable[[int, int, str], Any]] = None,
+        as_album: bool = True,
     ) -> None:
         if not self.is_ready():
             raise RuntimeError("userbot is not authorized or connected")
 
         total = len(media_list)
-        if total == 1:
-            item = media_list[0]
-            for _ in range(2):
-                try:
-                    await self.client.send_file(
-                        target_peer,
-                        file=str(item.path),
-                        caption=item.caption or None,
-                    )
-                    break
-                except FloodWaitError as e:
-                    await asyncio.sleep(e.seconds)
+        if total == 1 or not as_album:
+            for idx, item in enumerate(media_list, start=1):
+                def _prog(sent: int, total_bytes: int):
+                    if progress_callback and total_bytes > 0:
+                        progress_callback(sent, total_bytes, f"Отправка {idx}/{total}")
+
+                for _ in range(2):
+                    try:
+                        await self.client.send_file(
+                            target_peer,
+                            file=str(item.path),
+                            caption=item.caption or None,
+                            progress_callback=_prog,
+                        )
+                        break
+                    except FloodWaitError as e:
+                        await asyncio.sleep(e.seconds)
             return
 
         for i in range(0, total, 10):
