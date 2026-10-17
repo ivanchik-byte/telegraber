@@ -1,0 +1,18 @@
+services:
+  telegraber:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegraber
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./downloads:/app/downloads
+      - ./sessions:/app/sessions
+      - ./tdata_input:/app/tdata_input:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

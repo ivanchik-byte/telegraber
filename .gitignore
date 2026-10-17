@@ -1,0 +1,27 @@
+# Environment & Secrets
+.env
+*.env
+
+# Sessions & Data
+sessions/*
+!sessions/.gitkeep
+downloads/*
+!downloads/.gitkeep
+tdata_input/*
+!tdata_input/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

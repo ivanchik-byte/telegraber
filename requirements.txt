@@ -1,0 +1,7 @@
+telethon>=1.38.0,<2.0.0
+opentele2>=1.2.0
+cryptg>=0.4.0
+pydantic-settings>=2.4.0
+aiofiles>=24.1.0
+PySocks>=1.7.1
+python-socks[asyncio]>=3.1.1
