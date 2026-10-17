@@ -88,7 +88,6 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
         total_size_mb = sum(item.size for item in media_list) / (1024 * 1024)
 
         sent_via_bot = False
-        # If any file exceeds 50MB, ALL files go to the fallback destination together
         if not any_heavy and settings.FALLBACK_DESTINATION != "channel":
             await status_msg.edit(
                 f"📤 Отправляю {len(media_list)} файл(ов) в диалог бота ({total_size_mb:.1f} МБ)..."
@@ -133,7 +132,6 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
     except Exception as e:
         await status_msg.edit(f"❌ Ошибка загрузки: {e}")
     finally:
-        # Atomic local cleanup: delete all temporary files immediately
         for item in media_list:
             try:
                 if item.path.exists():
@@ -169,7 +167,6 @@ async def register_handlers(bot: TelegramClient) -> None:
             )
             return
 
-        # Check for tdata automatically
         ok, msg, acc = await check_tdata_directory()
         if ok:
             await userbot_service.start()

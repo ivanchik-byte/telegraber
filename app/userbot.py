@@ -75,14 +75,12 @@ class UserbotService:
     @staticmethod
     def parse_post_link(link: str) -> Optional[Tuple[Any, int]]:
         cleaned = link.strip().split("?")[0].rstrip("/")
-        # Private channel: t.me/c/123456789/42
         m_priv = re.search(r"t\.me/c/(\d+)/(\d+)", cleaned)
         if m_priv:
             channel_id = int("-100" + m_priv.group(1))
             post_id = int(m_priv.group(2))
             return channel_id, post_id
 
-        # Public channel: t.me/channel_name/42
         m_pub = re.search(r"t\.me/([a-zA-Z0-9_]+)/(\d+)", cleaned)
         if m_pub:
             username = m_pub.group(1)
@@ -115,7 +113,6 @@ class UserbotService:
 
         messages = [target_message]
         if target_message.grouped_id:
-            # Album detection: query surrounding messages to capture the whole media group
             start_id = max(1, post_id - 10)
             end_id = post_id + 10
             surrounding = await self.client.get_messages(entity, ids=list(range(start_id, end_id + 1)))

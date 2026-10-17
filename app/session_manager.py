@@ -151,6 +151,5 @@ async def check_tdata_directory(password: Optional[str] = None) -> Tuple[bool, s
     if not candidates:
         return False, "no tdata files found", None
 
-    # Pick the most recently modified tdata
     target = max(candidates, key=lambda p: p.stat().st_mtime)
     return await convert_tdata_from_path(target, password=password)

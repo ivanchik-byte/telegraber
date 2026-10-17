@@ -23,7 +23,6 @@ async def main() -> None:
 
     logger.info("Starting Telegraber service...")
 
-    # Attempt to boot userbot if session string already exists
     try:
         userbot_ok = await userbot_service.start()
         if userbot_ok:
@@ -34,7 +33,6 @@ async def main() -> None:
     except Exception as exc:
         logger.warning("Could not auto-start userbot: %s", exc)
 
-    # Boot bot controller
     bot = await init_bot()
     bot_me = await bot.get_me()
     logger.info("Bot controller is online as @%s (Owner ID: %s)", bot_me.username, settings.OWNER_ID)
