@@ -285,7 +285,6 @@ async def register_handlers(bot: TelegramClient) -> None:
         state = user_states.get(event.sender_id, {})
         action = state.get("action")
 
-        # 1. State: 2FA for Tdata
         if action == "tdata_2fa":
             user_states.pop(event.sender_id, None)
             ok, msg, acc = await check_tdata_directory(password=text)
@@ -298,7 +297,6 @@ async def register_handlers(bot: TelegramClient) -> None:
                 await event.reply(f"❌ Ошибка авторизации: {msg}")
             return
 
-        # 2. State: Target chat ID
         if action == "await_target_chat":
             user_states.pop(event.sender_id, None)
             try:
@@ -313,7 +311,6 @@ async def register_handlers(bot: TelegramClient) -> None:
                 await event.reply("❌ ID должен быть целым числом (например, `-1001234567890`).")
             return
 
-        # 3. State: Phone login step 1 (Phone number)
         if action == "await_phone":
             phone = text.replace(" ", "").replace("-", "")
             profile = get_default_device_profile()
@@ -346,7 +343,6 @@ async def register_handlers(bot: TelegramClient) -> None:
                 await event.reply(f"❌ Не удалось отправить код: {e}")
             return
 
-        # 4. State: Phone login step 2 (Code)
         if action == "await_code":
             code = text.replace(" ", "").replace("-", "")
             client: TelegramClient = state.get("client")

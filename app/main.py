@@ -16,8 +16,12 @@ logger = logging.getLogger("telegraber")
 
 
 async def main() -> None:
-    logger.info("Starting Telegraber service...")
     settings.load_runtime_overrides()
+    if not settings.BOT_TOKEN or not settings.OWNER_ID:
+        logger.error("BOT_TOKEN and OWNER_ID are required in .env file.")
+        sys.exit(1)
+
+    logger.info("Starting Telegraber service...")
 
     # Attempt to boot userbot if session string already exists
     try:

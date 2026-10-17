@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Optional, Literal, Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 FallbackDestination = Literal["direct", "channel"]
@@ -36,8 +37,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    BOT_TOKEN: str
-    OWNER_ID: int
+    BOT_TOKEN: str = ""
+    OWNER_ID: int = 0
     TELEGRAM_API_ID: int = 2040
     TELEGRAM_API_HASH: str = "b18441a1b366a10c4822d4f3521e4b24"
     FALLBACK_DESTINATION: FallbackDestination = "direct"
@@ -46,6 +47,39 @@ class Settings(BaseSettings):
     DOWNLOAD_DIR: Path = Path("/app/downloads")
     SESSIONS_DIR: Path = Path("/app/sessions")
     TDATA_DIR: Path = Path("/app/tdata_input")
+
+    @field_validator("BOT_TOKEN", mode="before")
+    @classmethod
+    def clean_token(cls, v: Any) -> str:
+        return str(v).strip() if v else ""
+
+    @field_validator("OWNER_ID", mode="before")
+    @classmethod
+    def clean_owner_id(cls, v: Any) -> int:
+        if not v or (isinstance(v, str) and not v.strip()):
+            return 0
+        return int(v)
+
+    @field_validator("TELEGRAM_API_ID", mode="before")
+    @classmethod
+    def clean_api_id(cls, v: Any) -> int:
+        if not v or (isinstance(v, str) and not v.strip()):
+            return 2040
+        return int(v)
+
+    @field_validator("TELEGRAM_API_HASH", mode="before")
+    @classmethod
+    def clean_api_hash(cls, v: Any) -> str:
+        if not v or (isinstance(v, str) and not v.strip()):
+            return "b18441a1b366a10c4822d4f3521e4b24"
+        return str(v).strip()
+
+    @field_validator("TARGET_CHAT_ID", mode="before")
+    @classmethod
+    def clean_target_chat(cls, v: Any) -> Optional[int]:
+        if not v or (isinstance(v, str) and not v.strip()):
+            return None
+        return int(v)
 
     def get_runtime_config_path(self) -> Path:
         return self.SESSIONS_DIR / "runtime_config.json"
