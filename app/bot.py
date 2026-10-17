@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 import qrcode
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
+from telethon.tl import functions, types
 from telethon.errors import (
     SessionPasswordNeededError,
     PhoneCodeInvalidError,
@@ -94,39 +95,6 @@ def get_settings_keyboard():
             Button.inline("Закрыть меню", data=b"close_menu"),
         ],
     ]
-
-
-def get_keypad(entered: str):
-    display_code = " ".join(list(entered) + ["_"] * (5 - len(entered)))
-    buttons = [
-        [
-            Button.inline("1", data=b"kp_1"),
-            Button.inline("2", data=b"kp_2"),
-            Button.inline("3", data=b"kp_3"),
-        ],
-        [
-            Button.inline("4", data=b"kp_4"),
-            Button.inline("5", data=b"kp_5"),
-            Button.inline("6", data=b"kp_6"),
-        ],
-        [
-            Button.inline("7", data=b"kp_7"),
-            Button.inline("8", data=b"kp_8"),
-            Button.inline("9", data=b"kp_9"),
-        ],
-        [
-            Button.inline("⌫", data=b"kp_del"),
-            Button.inline("0", data=b"kp_0"),
-            Button.inline("Отмена", data=b"cancel_login"),
-        ],
-    ]
-    text = (
-        "**Код подтверждения отправлен в Telegram**\n\n"
-        f"Код: `{display_code}`\n\n"
-        "Нажимайте цифры на клавиатуре ниже.\n"
-        "_(Не отправляйте код слитными цифрами в чат — Telegram сразу его аннулирует)_"
-    )
-    return text, buttons
 
 
 async def execute_qr_login(chat_id: int):
@@ -288,15 +256,25 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
         sent_via_bot = False
         if not has_heavy_file and settings.FALLBACK_DESTINATION != "channel":
             await status_msg.edit(
-                f"Отправка в диалог бота ({count} файл(ов), {total_size_mb:.1f} МБ)..."
+                f"Отправка альбома в диалог бота ({count} файл(ов), {total_size_mb:.1f} МБ)..."
             )
             try:
-                for item in media_list:
-                    await bot_client.send_file(
-                        settings.OWNER_ID,
-                        file=str(item.path),
-                        caption=item.caption or None,
-                    )
+                for i in range(0, count, 10):
+                    chunk = media_list[i : i + 10]
+                    chunk_files = [str(x.path) for x in chunk]
+                    chunk_captions = [x.caption or "" for x in chunk]
+                    if len(chunk_files) == 1:
+                        await bot_client.send_file(
+                            settings.OWNER_ID,
+                            file=chunk_files[0],
+                            caption=chunk_captions[0] or None,
+                        )
+                    else:
+                        await bot_client.send_file(
+                            settings.OWNER_ID,
+                            file=chunk_files,
+                            caption=chunk_captions,
+                        )
                 sent_via_bot = True
                 await status_msg.edit(
                     f"Доставлено в диалог бота: {count} файл(ов) ({total_size_mb:.1f} МБ)."
@@ -365,7 +343,8 @@ async def register_handlers(bot: TelegramClient) -> None:
                 f"• Аккаунт: **{user.first_name}** (`{uname}`)\n"
                 f"• Доставка файлов >50 МБ: **{mode_desc}**\n\n"
                 f"Отправьте ссылку на публикацию Telegram для скачивания.\n"
-                f"Управление параметрами: /settings",
+                f"Управление параметрами: /settings\n"
+                f"Справка: /help",
                 buttons=get_main_keyboard(),
             )
             return
@@ -403,11 +382,34 @@ async def register_handlers(bot: TelegramClient) -> None:
             return
         await event.reply(
             "**Параметры доставки**\n\n"
-            "• Файлы до 50 МБ отправляются напрямую в этот диалог.\n"
+            "• Файлы до 50 МБ отправляются альбомом в этот диалог.\n"
             "• Файлы более 50 МБ направляются в выбранное хранилище.\n"
             "• Если в альбоме есть файл >50 МБ, все файлы сообщения доставляются вместе.\n"
             "• Локальные файлы немедленно удаляются с сервера после отправки.",
             buttons=get_settings_keyboard(),
+        )
+
+    @bot.on(events.NewMessage(pattern=r"^/help$"))
+    async def cmd_help(event: events.NewMessage.Event):
+        if not is_owner(event.sender_id):
+            return
+        await event.reply(
+            "**Справка по использованию Telegraber**\n\n"
+            "**Как скачать медиа:**\n"
+            "Отправьте ссылку на пост или альбом:\n"
+            "• Публичные каналы: `https://t.me/channel/123`\n"
+            "• Закрытые каналы: `https://t.me/c/1234567890/123`\n"
+            "_(для закрытых каналов аккаунт юзербота должен состоять в канале)_\n\n"
+            "**Правила отправки:**\n"
+            "• Файлы до 50 МБ присылаются в этот чат одной папкой (альбомом).\n"
+            "• Файлы более 50 МБ (до 2 ГБ / 4 ГБ) доставляются через юзербота в Личные сообщения или канал-хранилище.\n"
+            "• Если в альбоме есть хотя бы один файл >50 МБ, все файлы сообщения доставляются вместе.\n"
+            "• Все файлы сразу удаляются с сервера после отправки.\n\n"
+            "**Команды:**\n"
+            "• /start — главное меню и статус\n"
+            "• /settings — параметры доставки и хранилища\n"
+            "• /help — эта справка",
+            buttons=get_main_keyboard(),
         )
 
     @bot.on(events.CallbackQuery)
@@ -541,83 +543,6 @@ async def register_handlers(bot: TelegramClient) -> None:
             )
             return
 
-        if data.startswith("kp_"):
-            val = data[3:]
-            state = user_states.get(event.sender_id, {})
-            if state.get("action") != "await_code":
-                await event.answer("Клавиатура ввода устарела.", alert=True)
-                return
-
-            entered = state.get("entered", "")
-            if val == "del":
-                entered = entered[:-1]
-            elif val.isdigit() and len(entered) < 5:
-                entered += val
-
-            state["entered"] = entered
-
-            if len(entered) < 5:
-                text, buttons = get_keypad(entered)
-                await event.edit(text, buttons=buttons)
-                await event.answer()
-                return
-
-            await event.edit("Проверка кода подтверждения...")
-            client: TelegramClient = state["client"]
-            phone = state["phone"]
-            phone_code_hash = state["phone_code_hash"]
-
-            try:
-                await client.sign_in(phone=phone, code=entered, phone_code_hash=phone_code_hash)
-                session_str = StringSession.save(client.session)
-                save_session_string(session_str)
-                await client.disconnect()
-                user_states.pop(event.sender_id, None)
-
-                await userbot_service.start()
-                user = userbot_service.me
-                uname = f"@{user.username}" if user.username else f"+{user.phone or user.id}"
-                await event.edit(
-                    f"**Авторизация успешна**\n\n"
-                    f"Подключен аккаунт: **{user.first_name}** (`{uname}`).\n"
-                    f"Бот готов к приему ссылок на публикации.",
-                    buttons=get_main_keyboard(),
-                )
-            except SessionPasswordNeededError:
-                user_states[event.sender_id] = {
-                    "action": "await_2fa",
-                    "client": client,
-                }
-                await event.edit(
-                    "**Облачный пароль (2FA)**\n\n"
-                    "На аккаунте включена двухфакторная аутентификация.\n"
-                    "Отправьте пароль 2FA текстовым сообщением в чат:"
-                )
-            except PhoneCodeInvalidError:
-                state["entered"] = ""
-                text, buttons = get_keypad("")
-                await event.edit(f"**Неверный код.** Попробуйте снова.\n\n{text}", buttons=buttons)
-            except PhoneCodeExpiredError:
-                cleanup_user_state(event.sender_id)
-                await event.edit(
-                    "**Код аннулирован сервером Telegram**\n\n"
-                    "Telegram автоматически сжигает коды безопасности при обнаружении в переписке.\n"
-                    "Рекомендуется войти по QR-коду — это мгновенно и без ввода цифр.",
-                    buttons=[
-                        [Button.inline("Вход по QR-коду (рекомендуется)", data=b"start_qr_login")],
-                        [Button.inline("Попробовать снова", data=b"start_phone_login")],
-                        [Button.inline("Главное меню", data=b"cancel_login")],
-                    ],
-                )
-            except Exception as e:
-                cleanup_user_state(event.sender_id)
-                await event.edit(
-                    f"**Ошибка авторизации:** {e}",
-                    buttons=get_main_keyboard(),
-                )
-            await event.answer()
-            return
-
     @bot.on(events.NewMessage)
     async def handle_text(event: events.NewMessage.Event):
         if not is_owner(event.sender_id) or not event.text:
@@ -625,6 +550,10 @@ async def register_handlers(bot: TelegramClient) -> None:
 
         text = event.text.strip()
         if text.startswith("/"):
+            return
+
+        if text.lower() in ("меню", "menu"):
+            await cmd_start(event)
             return
 
         state = user_states.get(event.sender_id, {})
@@ -684,10 +613,17 @@ async def register_handlers(bot: TelegramClient) -> None:
                     "phone": phone,
                     "phone_code_hash": res.phone_code_hash,
                     "client": temp_client,
-                    "entered": "",
                 }
-                kp_text, buttons = get_keypad("")
-                await event.reply(kp_text, buttons=buttons)
+                await event.reply(
+                    "**Код подтверждения отправлен в Telegram**\n\n"
+                    "Введите полученный код в ответ на это сообщение.\n\n"
+                    "_(Рекомендуется отправить код через пробелы или дефис, например: `1 2 3 4 5` или `1-2-3-4-5`, "
+                    "чтобы сервер Telegram не аннулировал его)_",
+                    buttons=[
+                        [Button.inline("Вход по QR-коду (быстрее)", data=b"start_qr_login")],
+                        [Button.inline("Отмена", data=b"cancel_login")],
+                    ],
+                )
             except Exception as e:
                 await _safe_disconnect(temp_client)
                 user_states.pop(event.sender_id, None)
@@ -699,11 +635,11 @@ async def register_handlers(bot: TelegramClient) -> None:
 
         if action == "await_code":
             raw_digits = "".join(ch for ch in text if ch.isdigit())
-            if len(raw_digits) == 5:
+            if len(raw_digits) >= 5:
                 client: TelegramClient = state.get("client")
                 phone = state.get("phone")
                 phone_code_hash = state.get("phone_code_hash")
-                status_reply = await event.reply("Проверка кода...")
+                status_reply = await event.reply("Проверка кода подтверждения...")
                 try:
                     await client.sign_in(phone=phone, code=raw_digits, phone_code_hash=phone_code_hash)
                     session_str = StringSession.save(client.session)
@@ -717,7 +653,7 @@ async def register_handlers(bot: TelegramClient) -> None:
                     await status_reply.edit(
                         f"**Авторизация успешна**\n\n"
                         f"Подключен аккаунт: **{user.first_name}** (`{uname}`).\n"
-                        f"Бот готов к работе.",
+                        f"Бот готов к работе. Отправьте ссылку на публикацию.",
                         buttons=get_main_keyboard(),
                     )
                 except SessionPasswordNeededError:
@@ -727,16 +663,17 @@ async def register_handlers(bot: TelegramClient) -> None:
                         "На аккаунте включен пароль двухфакторной аутентификации. Введите пароль в чат:"
                     )
                 except PhoneCodeInvalidError:
-                    await status_reply.edit("Неверный код. Попробуйте еще раз.")
+                    await status_reply.edit("Неверный код подтверждения. Попробуйте еще раз:")
                 except PhoneCodeExpiredError:
                     cleanup_user_state(event.sender_id)
                     await status_reply.edit(
                         "**Код аннулирован сервером Telegram**\n\n"
-                        "Telegram автоматически сжигает коды безопасности при отправке обычным текстом в чат.\n"
-                        "Воспользуйтесь входом по QR-коду — это мгновенно и надежно.",
+                        "Telegram автоматически отзывает код безопасности при отправке обычными слитными цифрами в чат.\n\n"
+                        "Рекомендуется воспользоваться входом по QR-коду (сканирование за 2 секунды) "
+                        "либо запросить код заново и отправить его через пробелы (например: `1 2 3 4 5`).",
                         buttons=[
                             [Button.inline("Вход по QR-коду (рекомендуется)", data=b"start_qr_login")],
-                            [Button.inline("Вход по номеру", data=b"start_phone_login")],
+                            [Button.inline("Запросить код заново", data=b"start_phone_login")],
                         ],
                     )
                 except Exception as e:
@@ -745,6 +682,8 @@ async def register_handlers(bot: TelegramClient) -> None:
                         f"Ошибка авторизации: {e}",
                         buttons=get_main_keyboard(),
                     )
+            else:
+                await event.reply("Код подтверждения должен состоять минимум из 5 цифр. Попробуйте снова:")
             return
 
         if action == "await_2fa":
@@ -789,4 +728,22 @@ async def init_bot() -> TelegramClient:
     )
     await bot_client.start(bot_token=settings.BOT_TOKEN)
     await register_handlers(bot_client)
+
+    try:
+        await bot_client(functions.bots.SetBotCommandsRequest(
+            scope=types.BotCommandScopeDefault(),
+            lang_code="",
+            commands=[
+                types.BotCommand(command="start", description="Главное меню и статус"),
+                types.BotCommand(command="settings", description="Параметры доставки"),
+                types.BotCommand(command="help", description="Справка и инструкция"),
+            ]
+        ))
+        await bot_client(functions.bots.SetBotMenuButtonRequest(
+            user_id=types.InputUserEmpty(),
+            button=types.BotMenuButtonCommands()
+        ))
+    except Exception:
+        pass
+
     return bot_client

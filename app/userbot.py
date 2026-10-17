@@ -164,19 +164,38 @@ class UserbotService:
             raise RuntimeError("userbot is not authorized or connected")
 
         total = len(media_list)
-        for idx, item in enumerate(media_list, start=1):
-            def _prog(sent: int, total_bytes: int):
-                if progress_callback and total_bytes > 0:
-                    progress_callback(sent, total_bytes, f"Отправка {idx}/{total}")
-
+        if total == 1:
+            item = media_list[0]
             for _ in range(2):
                 try:
                     await self.client.send_file(
                         target_peer,
                         file=str(item.path),
                         caption=item.caption or None,
-                        progress_callback=_prog,
                     )
+                    break
+                except FloodWaitError as e:
+                    await asyncio.sleep(e.seconds)
+            return
+
+        for i in range(0, total, 10):
+            chunk = media_list[i : i + 10]
+            chunk_files = [str(x.path) for x in chunk]
+            chunk_captions = [x.caption or "" for x in chunk]
+            for _ in range(2):
+                try:
+                    if len(chunk_files) == 1:
+                        await self.client.send_file(
+                            target_peer,
+                            file=chunk_files[0],
+                            caption=chunk_captions[0] or None,
+                        )
+                    else:
+                        await self.client.send_file(
+                            target_peer,
+                            file=chunk_files,
+                            caption=chunk_captions,
+                        )
                     break
                 except FloodWaitError as e:
                     await asyncio.sleep(e.seconds)
