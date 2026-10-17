@@ -49,10 +49,9 @@ class Settings(BaseSettings):
     TDATA_DIR: Path = Path("/app/tdata_input")
 
     def get_api_credentials(self) -> tuple[int, str]:
-        return (
-            self.TELEGRAM_API_ID or 2040,
-            self.TELEGRAM_API_HASH or "b18441a1b366a10c4822d4f3521e4b24",
-        )
+        if not self.TELEGRAM_API_ID or not self.TELEGRAM_API_HASH:
+            raise ValueError("TELEGRAM_API_ID and TELEGRAM_API_HASH must be set in .env")
+        return self.TELEGRAM_API_ID, self.TELEGRAM_API_HASH
 
     @field_validator("BOT_TOKEN", mode="before")
     @classmethod

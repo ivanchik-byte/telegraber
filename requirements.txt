@@ -5,3 +5,4 @@ pydantic-settings>=2.4.0
 aiofiles>=24.1.0
 PySocks>=1.7.1
 python-socks[asyncio]>=3.1.1
+qrcode[pil]>=7.4.2
