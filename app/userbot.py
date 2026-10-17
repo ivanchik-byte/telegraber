@@ -1,9 +1,10 @@
 import asyncio
-import os
+import logging
 import re
+import shutil
+import time
 from pathlib import Path
-from typing import Optional, List, Tuple, Dict, Any, Callable
-from urllib.parse import urlparse
+from typing import Optional, List, Tuple, Any, Callable
 
 from telethon import TelegramClient
 from telethon.sessions import StringSession
@@ -13,16 +14,11 @@ from telethon.errors import (
     ChannelPrivateError,
     ChatAdminRequiredError,
 )
-from telethon.tl.types import (
-    MessageMediaPhoto,
-    MessageMediaDocument,
-    DocumentAttributeVideo,
-    DocumentAttributeAudio,
-    DocumentAttributeFilename,
-)
 
 from app.config import settings, DEVICE_PROFILES
 from app.session_manager import get_saved_session_string
+
+logger = logging.getLogger(__name__)
 
 
 class DownloadedMedia:
@@ -76,14 +72,14 @@ class UserbotService:
     @staticmethod
     def parse_post_link(link: str) -> Optional[Tuple[Any, int]]:
         cleaned = link.strip().split("?")[0].rstrip("/")
-        m_priv = re.search(r"t\.me/c/(\d+)/(\d+)", cleaned)
+        m_priv = re.search(r"(?:t|telegram)\.me/c/(\d+)(?:/\d+)?/(\d+)$", cleaned)
         if m_priv:
             channel_id = int("-100" + m_priv.group(1))
             post_id = int(m_priv.group(2))
             return channel_id, post_id
 
-        m_pub = re.search(r"t\.me/([a-zA-Z0-9_]+)/(\d+)", cleaned)
-        if m_pub:
+        m_pub = re.search(r"(?:t|telegram)\.me/([a-zA-Z0-9_]+)(?:/\d+)?/(\d+)$", cleaned)
+        if m_pub and m_pub.group(1) != "c":
             username = m_pub.group(1)
             post_id = int(m_pub.group(2))
             return username, post_id
@@ -125,48 +121,66 @@ class UserbotService:
                 album_msgs.sort(key=lambda x: x.id)
                 messages = album_msgs
 
+        clean_peer = re.sub(r"[^a-zA-Z0-9_]", "", str(peer))
+        dest_dir = settings.DOWNLOAD_DIR / f"task_{clean_peer}_{post_id}_{int(time.time() * 1000)}"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
         results: List[DownloadedMedia] = []
         total_items = len(messages)
+        max_attempts = 3
 
-        for idx, msg in enumerate(messages, start=1):
-            for attempt in range(2):
-                try:
-                    def _prog(received: int, total: int):
-                        if progress_callback and total > 0:
-                            progress_callback(received, total, f"Загрузка {idx}/{total_items}")
+        try:
+            for idx, msg in enumerate(messages, start=1):
+                downloaded = False
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        def _prog(received: int, total: int):
+                            if progress_callback and total > 0:
+                                progress_callback(received, total, f"Загрузка {idx}/{total_items}")
 
-                    dest_dir = settings.DOWNLOAD_DIR / f"task_{post_id}"
-                    dest_dir.mkdir(parents=True, exist_ok=True)
-
-                    downloaded_path = await self.client.download_media(
-                        msg,
-                        file=str(dest_dir) + "/",
-                        progress_callback=_prog,
-                    )
-                    if downloaded_path:
-                        media_file = Path(downloaded_path)
-                        if media_file.name.startswith("."):
-                            fixed_name = f"media_{msg.id}{media_file.name}"
-                            fixed_path = media_file.parent / fixed_name
-                            media_file.rename(fixed_path)
-                            media_file = fixed_path
-                        elif not media_file.suffix:
-                            if hasattr(msg, "video") and msg.video:
-                                fixed_path = media_file.with_suffix(".mp4")
+                        downloaded_path = await self.client.download_media(
+                            msg,
+                            file=str(dest_dir) + "/",
+                            progress_callback=_prog,
+                        )
+                        if downloaded_path:
+                            media_file = Path(downloaded_path)
+                            if media_file.name.startswith("."):
+                                fixed_name = f"media_{msg.id}{media_file.name}"
+                                fixed_path = media_file.parent / fixed_name
                                 media_file.rename(fixed_path)
                                 media_file = fixed_path
-                            elif hasattr(msg, "photo") and msg.photo:
-                                fixed_path = media_file.with_suffix(".jpg")
-                                media_file.rename(fixed_path)
-                                media_file = fixed_path
-                        results.append(DownloadedMedia(path=media_file, caption=msg.text or ""))
-                    break
-                except FileReferenceExpiredError:
-                    msg = await self.client.get_messages(entity, ids=msg.id)
-                except FloodWaitError as e:
-                    await asyncio.sleep(e.seconds)
+                            elif not media_file.suffix:
+                                if hasattr(msg, "video") and msg.video:
+                                    fixed_path = media_file.with_suffix(".mp4")
+                                    media_file.rename(fixed_path)
+                                    media_file = fixed_path
+                                elif hasattr(msg, "photo") and msg.photo:
+                                    fixed_path = media_file.with_suffix(".jpg")
+                                    media_file.rename(fixed_path)
+                                    media_file = fixed_path
+                            results.append(DownloadedMedia(path=media_file, caption=msg.text or ""))
+                        downloaded = True
+                        break
+                    except FileReferenceExpiredError:
+                        logger.warning("File reference expired for msg %s, refetching (attempt %d/%d)", msg.id, attempt, max_attempts)
+                        refetched = await self.client.get_messages(entity, ids=msg.id)
+                        if refetched:
+                            msg = refetched
+                    except FloodWaitError as e:
+                        logger.warning("FloodWait %d seconds while downloading msg %s (attempt %d/%d)", e.seconds, msg.id, attempt, max_attempts)
+                        if attempt == max_attempts:
+                            raise
+                        await asyncio.sleep(e.seconds)
 
-        return results
+                if not downloaded:
+                    raise RuntimeError(f"Failed to download media for message {msg.id} after {max_attempts} attempts")
+
+            return results
+        except Exception:
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir, ignore_errors=True)
+            raise
 
     async def send_media_files(
         self,
@@ -179,13 +193,16 @@ class UserbotService:
             raise RuntimeError("userbot is not authorized or connected")
 
         total = len(media_list)
+        max_attempts = 3
+
         if total == 1 or not as_album:
             for idx, item in enumerate(media_list, start=1):
                 def _prog(sent: int, total_bytes: int):
                     if progress_callback and total_bytes > 0:
                         progress_callback(sent, total_bytes, f"Отправка {idx}/{total}")
 
-                for _ in range(2):
+                sent = False
+                for attempt in range(1, max_attempts + 1):
                     try:
                         await self.client.send_file(
                             target_peer,
@@ -193,16 +210,23 @@ class UserbotService:
                             caption=item.caption or None,
                             progress_callback=_prog,
                         )
+                        sent = True
                         break
                     except FloodWaitError as e:
+                        logger.warning("FloodWait %d seconds while sending file %s (attempt %d/%d)", e.seconds, item.path.name, attempt, max_attempts)
+                        if attempt == max_attempts:
+                            raise
                         await asyncio.sleep(e.seconds)
+                if not sent:
+                    raise RuntimeError(f"Failed to send file {item.path.name} after {max_attempts} attempts")
             return
 
         for i in range(0, total, 10):
             chunk = media_list[i : i + 10]
             chunk_files = [str(x.path) for x in chunk]
             chunk_captions = [x.caption or "" for x in chunk]
-            for _ in range(2):
+            sent = False
+            for attempt in range(1, max_attempts + 1):
                 try:
                     if len(chunk_files) == 1:
                         await self.client.send_file(
@@ -216,9 +240,15 @@ class UserbotService:
                             file=chunk_files,
                             caption=chunk_captions,
                         )
+                    sent = True
                     break
                 except FloodWaitError as e:
+                    logger.warning("FloodWait %d seconds while sending album chunk (attempt %d/%d)", e.seconds, attempt, max_attempts)
+                    if attempt == max_attempts:
+                        raise
                     await asyncio.sleep(e.seconds)
+            if not sent:
+                raise RuntimeError(f"Failed to send album chunk after {max_attempts} attempts")
 
 
 userbot_service = UserbotService()

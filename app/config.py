@@ -100,10 +100,6 @@ class Settings(BaseSettings):
                     self.FALLBACK_DESTINATION = data["FALLBACK_DESTINATION"]
                 if "TARGET_CHAT_ID" in data:
                     self.TARGET_CHAT_ID = data["TARGET_CHAT_ID"]
-                if "TELEGRAM_API_ID" in data and data["TELEGRAM_API_ID"]:
-                    self.TELEGRAM_API_ID = int(data["TELEGRAM_API_ID"])
-                if "TELEGRAM_API_HASH" in data and data["TELEGRAM_API_HASH"]:
-                    self.TELEGRAM_API_HASH = str(data["TELEGRAM_API_HASH"])
         except Exception:
             pass
 
@@ -112,8 +108,6 @@ class Settings(BaseSettings):
         payload = {
             "FALLBACK_DESTINATION": self.FALLBACK_DESTINATION,
             "TARGET_CHAT_ID": self.TARGET_CHAT_ID,
-            "TELEGRAM_API_ID": self.TELEGRAM_API_ID,
-            "TELEGRAM_API_HASH": self.TELEGRAM_API_HASH,
         }
         with open(self.get_runtime_config_path(), "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)

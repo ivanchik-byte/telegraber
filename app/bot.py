@@ -1,7 +1,6 @@
 import asyncio
 import io
 import time
-from pathlib import Path
 from typing import Optional, Dict, Any
 
 import qrcode
@@ -248,11 +247,11 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
             await status_msg.edit("В указанной публикации нет поддерживаемых медиафайлов.")
             return
 
+        count = len(media_list)
         total_size = sum(item.size for item in media_list)
         total_size_mb = total_size / (1024 * 1024)
         has_heavy_file = any(item.size > 50 * 1024 * 1024 for item in media_list)
         is_large_batch = total_size > 50 * 1024 * 1024 or count > 10
-        count = len(media_list)
 
         sent_via_bot = False
         if not has_heavy_file and settings.FALLBACK_DESTINATION != "channel":

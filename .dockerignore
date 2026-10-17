@@ -1,0 +1,11 @@
+.env
+*.env
+sessions/
+downloads/
+tdata_input/
+__pycache__/
+*.py[cod]
+*$py.class
+.git/
+.gitignore
+README.md

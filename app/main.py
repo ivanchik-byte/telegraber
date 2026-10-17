@@ -16,7 +16,6 @@ logger = logging.getLogger("telegraber")
 
 
 async def main() -> None:
-    settings.load_runtime_overrides()
     if not settings.BOT_TOKEN or not settings.OWNER_ID:
         logger.error("BOT_TOKEN and OWNER_ID are required in .env file.")
         sys.exit(1)

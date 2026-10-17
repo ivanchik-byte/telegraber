@@ -52,7 +52,7 @@ def _safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
             if name.startswith("/") or name.startswith("\\") or ".." in name:
                 raise ValueError("unsafe path in archive")
             target = (dest_dir / name).resolve()
-            if not str(target).startswith(str(dest_dir.resolve())):
+            if not target.is_relative_to(dest_dir.resolve()):
                 raise ValueError("path traversal detected")
             if entry.is_dir():
                 target.mkdir(parents=True, exist_ok=True)
