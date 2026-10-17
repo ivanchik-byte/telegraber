@@ -1,9 +1,12 @@
 import asyncio
 import io
+import logging
 import time
 from typing import Optional, Dict, Any
 
 import qrcode
+
+logger = logging.getLogger(__name__)
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from telethon.tl import functions, types
@@ -240,10 +243,12 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
 
     media_list: list[DownloadedMedia] = []
     try:
+        logger.info("Starting post download for link: %s (requested by %s)", link, event.sender_id)
         media_list = await userbot_service.fetch_and_download(
             link, progress_callback=progress_callback
         )
         if not media_list:
+            logger.warning("No supported media found for link: %s", link)
             await status_msg.edit("В указанной публикации нет поддерживаемых медиафайлов.")
             return
 
@@ -252,11 +257,20 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
         total_size_mb = total_size / (1024 * 1024)
         has_heavy_file = any(item.size > 50 * 1024 * 1024 for item in media_list)
         is_large_batch = total_size > 50 * 1024 * 1024 or count > 10
+        logger.info(
+            "Downloaded %d file(s) (%.1f MB) for %s. has_heavy_file=%s, is_large_batch=%s",
+            count,
+            total_size_mb,
+            link,
+            has_heavy_file,
+            is_large_batch,
+        )
 
         sent_via_bot = False
         if not has_heavy_file and settings.FALLBACK_DESTINATION != "channel":
             try:
                 if is_large_batch:
+                    logger.info("Sending %d files individually via Bot API (total size %.1f MB)...", count, total_size_mb)
                     for idx, item in enumerate(media_list, start=1):
                         item_mb = item.size / (1024 * 1024)
                         await status_msg.edit(
@@ -274,6 +288,7 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
                         f"так как общий объем публикации превысил 50 МБ ({count} шт., {total_size_mb:.1f} МБ)."
                     )
                 else:
+                    logger.info("Sending %d files as album via Bot API (total size %.1f MB)...", count, total_size_mb)
                     await status_msg.edit(
                         f"Отправка альбома в диалог бота ({count} файл(ов), {total_size_mb:.1f} МБ)..."
                     )
@@ -295,6 +310,7 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
                     )
             except Exception as exc:
                 sent_via_bot = False
+                logger.warning("Bot API delivery failed (%s). Falling back to userbot...", exc)
                 await status_msg.edit(
                     f"Сбой отправки через Bot API ({exc}). "
                     f"Все файлы публикации будут отправлены через юзербота..."
@@ -308,6 +324,7 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
                 target_peer = settings.OWNER_ID
                 dest_title = "личные сообщения"
 
+            logger.info("Sending %d files via userbot to %s (as_album=%s)...", count, dest_title, not is_large_batch)
             await status_msg.edit(
                 f"Отправка через юзербота в {dest_title} ({count} файл(ов), {total_size_mb:.1f} МБ)..."
             )
@@ -326,12 +343,16 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
             await status_msg.edit(
                 f"Все файлы публикации ({count} шт., {total_size_mb:.1f} МБ) доставлены в {dest_title}.{warning_text}"
             )
+        logger.info("Post download and delivery finished successfully for %s", link)
 
     except PermissionError as e:
+        logger.error("Access error for %s: %s", link, e)
         await status_msg.edit(f"Ошибка доступа: {e}")
     except ValueError as e:
+        logger.error("Validation error for %s: %s", link, e)
         await status_msg.edit(f"Ошибка: {e}")
     except Exception as e:
+        logger.exception("Unexpected error processing %s: %s", link, e)
         await status_msg.edit(f"Ошибка обработки: {e}")
     finally:
         for item in media_list:

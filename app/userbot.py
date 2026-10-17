@@ -110,16 +110,41 @@ class UserbotService:
 
         messages = [target_message]
         if target_message.grouped_id:
-            start_id = max(1, post_id - 10)
-            end_id = post_id + 10
-            surrounding = await self.client.get_messages(entity, ids=list(range(start_id, end_id + 1)))
-            album_msgs = [
-                m for m in surrounding
-                if m and m.grouped_id == target_message.grouped_id and m.media
-            ]
-            if album_msgs:
-                album_msgs.sort(key=lambda x: x.id)
-                messages = album_msgs
+            logger.info("Target post %s has grouped_id=%s. Searching album...", post_id, target_message.grouped_id)
+            album_msgs_map = {target_message.id: target_message}
+
+            # Telegram albums contain 2 to 10 items sharing the same grouped_id.
+            # In channels with concurrent uploads or forwarded bundles, IDs can be interleaved.
+            start_id = max(1, post_id - 50)
+            end_id = post_id + 50
+            ids_to_fetch = list(range(start_id, end_id + 1))
+            surrounding = await self.client.get_messages(entity, ids=ids_to_fetch)
+            for m in surrounding:
+                if m and m.grouped_id == target_message.grouped_id and m.media:
+                    album_msgs_map[m.id] = m
+
+            # If still fewer than 10 items, check if album items were near the search boundaries
+            if len(album_msgs_map) < 10:
+                min_found = min(album_msgs_map.keys())
+                max_found = max(album_msgs_map.keys())
+                extra_ids = []
+                if min_found <= start_id + 5 and start_id > 1:
+                    extra_ids.extend(range(max(1, start_id - 50), start_id))
+                if max_found >= end_id - 5:
+                    extra_ids.extend(range(end_id + 1, end_id + 51))
+                if extra_ids:
+                    extra_msgs = await self.client.get_messages(entity, ids=extra_ids)
+                    for m in extra_msgs:
+                        if m and m.grouped_id == target_message.grouped_id and m.media:
+                            album_msgs_map[m.id] = m
+
+            messages = sorted(album_msgs_map.values(), key=lambda x: x.id)
+            logger.info(
+                "Found %d media items for album grouped_id=%s: IDs=%s",
+                len(messages),
+                target_message.grouped_id,
+                [m.id for m in messages],
+            )
 
         clean_peer = re.sub(r"[^a-zA-Z0-9_]", "", str(peer))
         dest_dir = settings.DOWNLOAD_DIR / f"task_{clean_peer}_{post_id}_{int(time.time() * 1000)}"
