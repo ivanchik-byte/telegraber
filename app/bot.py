@@ -323,7 +323,7 @@ async def handle_post_download(event: events.NewMessage.Event, link: str) -> Non
 
 
 async def register_handlers(bot: TelegramClient) -> None:
-    @bot.on(events.NewMessage(pattern=r"^/start$"))
+    @bot.on(events.NewMessage(pattern=r"^/(?:start|старт)(?:@\w+)?(?:\s+.*)?$"))
     async def cmd_start(event: events.NewMessage.Event):
         if not is_owner(event.sender_id):
             return
@@ -376,7 +376,7 @@ async def register_handlers(bot: TelegramClient) -> None:
             buttons=get_main_keyboard(),
         )
 
-    @bot.on(events.NewMessage(pattern=r"^/settings$"))
+    @bot.on(events.NewMessage(pattern=r"^/(?:settings|настройки)(?:@\w+)?(?:\s+.*)?$"))
     async def cmd_settings(event: events.NewMessage.Event):
         if not is_owner(event.sender_id):
             return
@@ -389,7 +389,7 @@ async def register_handlers(bot: TelegramClient) -> None:
             buttons=get_settings_keyboard(),
         )
 
-    @bot.on(events.NewMessage(pattern=r"^/help$"))
+    @bot.on(events.NewMessage(pattern=r"^/(?:help|справка|помощь)(?:@\w+)?(?:\s+.*)?$"))
     async def cmd_help(event: events.NewMessage.Event):
         if not is_owner(event.sender_id):
             return
@@ -552,8 +552,17 @@ async def register_handlers(bot: TelegramClient) -> None:
         if text.startswith("/"):
             return
 
-        if text.lower() in ("меню", "menu"):
+        low = text.lower()
+        if low in ("меню", "menu", "старт", "start"):
             await cmd_start(event)
+            return
+
+        if low in ("помощь", "help", "справка"):
+            await cmd_help(event)
+            return
+
+        if low in ("настройки", "settings"):
+            await cmd_settings(event)
             return
 
         state = user_states.get(event.sender_id, {})

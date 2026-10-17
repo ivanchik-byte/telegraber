@@ -145,6 +145,20 @@ class UserbotService:
                     )
                     if downloaded_path:
                         media_file = Path(downloaded_path)
+                        if media_file.name.startswith("."):
+                            fixed_name = f"media_{msg.id}{media_file.name}"
+                            fixed_path = media_file.parent / fixed_name
+                            media_file.rename(fixed_path)
+                            media_file = fixed_path
+                        elif not media_file.suffix:
+                            if hasattr(msg, "video") and msg.video:
+                                fixed_path = media_file.with_suffix(".mp4")
+                                media_file.rename(fixed_path)
+                                media_file = fixed_path
+                            elif hasattr(msg, "photo") and msg.photo:
+                                fixed_path = media_file.with_suffix(".jpg")
+                                media_file.rename(fixed_path)
+                                media_file = fixed_path
                         results.append(DownloadedMedia(path=media_file, caption=msg.text or ""))
                     break
                 except FileReferenceExpiredError:

@@ -8,6 +8,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./app:/app/app
       - ./downloads:/app/downloads
       - ./sessions:/app/sessions
       - ./tdata_input:/app/tdata_input:ro
